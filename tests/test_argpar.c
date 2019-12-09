@@ -631,10 +631,160 @@ void fail_tests(void)
 	}
 }
 
+static
+void test_iter_succeed(void)
+{
+	const struct argpar_opt_descr descrs[] = {
+		{ 0, 'a', NULL, false },
+		{ 0, 'b', NULL, false },
+		{ 0, 'c', NULL, true },
+		ARGPAR_OPT_DESCR_SENTINEL
+	};
+	struct argpar_item *item;
+	struct argpar_item_opt *item_opt;
+	struct argpar_item_non_opt *item_non_opt;
+	const char *argv[] = { "-ac", "hello", "my", "-b", "friend" };
+	struct argpar_state *state;
+	char *error = NULL;
+	enum argpar_state_parse_next_status status;
+
+	state = argpar_state_create(G_N_ELEMENTS(argv), argv, descrs);
+	assert(state);
+
+	/* Parse "-a" */
+	status = argpar_state_parse_next(state, &item, &error);
+	ok1(status == ARGPAR_STATE_PARSE_NEXT_STATUS_OK);
+	ok1(item);
+	ok1(item->type == ARGPAR_ITEM_TYPE_OPT);
+	item_opt = (struct argpar_item_opt *) item;
+	ok1(!item_opt->arg);
+	ok1(item_opt->descr == &descrs[0]);
+	ok1(argpar_state_get_ingested_orig_args(state) == 0);
+	ok1(!error);
+
+	argpar_item_destroy(item);
+
+	/* Parse "-c hello" */
+	status = argpar_state_parse_next(state, &item, &error);
+	ok1(status == ARGPAR_STATE_PARSE_NEXT_STATUS_OK);
+	ok1(item);
+	ok1(item->type == ARGPAR_ITEM_TYPE_OPT);
+	item_opt = (struct argpar_item_opt *) item;
+	ok1(strcmp(item_opt->arg, "hello") == 0);
+	ok1(item_opt->descr == &descrs[2]);
+	ok1(argpar_state_get_ingested_orig_args(state) == 2);
+	ok1(!error);
+
+	argpar_item_destroy(item);
+
+	/* Parse "my" */
+	status = argpar_state_parse_next(state, &item, &error);
+	ok1(status == ARGPAR_STATE_PARSE_NEXT_STATUS_OK);
+	ok1(item);
+	ok1(item->type == ARGPAR_ITEM_TYPE_NON_OPT);
+	item_non_opt = (struct argpar_item_non_opt *) item;
+	ok1(item_non_opt->arg == argv[2]);
+	ok1(item_non_opt->non_opt_index == 0);
+	ok1(item_non_opt->orig_index == 2);
+	ok1(argpar_state_get_ingested_orig_args(state) == 3);
+	ok1(!error);
+
+	argpar_item_destroy(item);
+
+	/* Parse "-b" */
+	status = argpar_state_parse_next(state, &item, &error);
+	ok1(status == ARGPAR_STATE_PARSE_NEXT_STATUS_OK);
+	ok1(item);
+	ok1(item->type == ARGPAR_ITEM_TYPE_OPT);
+	item_opt = (struct argpar_item_opt *) item;
+	ok1(!item_opt->arg);
+	ok1(item_opt->descr == &descrs[1]);
+	ok1(argpar_state_get_ingested_orig_args(state) == 4);
+	ok1(!error);
+
+	argpar_item_destroy(item);
+
+	/* Parse "friend" */
+	status = argpar_state_parse_next(state, &item, &error);
+	ok1(status == ARGPAR_STATE_PARSE_NEXT_STATUS_OK);
+	ok1(item);
+	ok1(item->type == ARGPAR_ITEM_TYPE_NON_OPT);
+	item_non_opt = (struct argpar_item_non_opt *) item;
+	ok1(item_non_opt->arg == argv[4]);
+	ok1(item_non_opt->non_opt_index == 1);
+	ok1(item_non_opt->orig_index == 4);
+	ok1(argpar_state_get_ingested_orig_args(state) == 5);
+	ok1(!error);
+
+	/* Reach the end */
+	status = argpar_state_parse_next(state, &item, &error);
+	ok1(status == ARGPAR_STATE_PARSE_NEXT_STATUS_END);
+	ok1(argpar_state_get_ingested_orig_args(state) == 5);
+
+	/* Calling it again should return _END again. */
+	status = argpar_state_parse_next(state, &item, &error);
+	ok1(status == ARGPAR_STATE_PARSE_NEXT_STATUS_END);
+	ok1(argpar_state_get_ingested_orig_args(state) == 5);
+
+	argpar_item_destroy(item);
+	argpar_state_destroy(state);
+}
+
+static
+void test_iter_fail(void)
+{
+	const struct argpar_opt_descr descrs[] = {
+		{ 0, 'a', NULL, false },
+		{ 0, 'b', NULL, false },
+		{ 0, 'c', NULL, true },
+		ARGPAR_OPT_DESCR_SENTINEL
+	};
+	struct argpar_item *item;
+	struct argpar_item_non_opt *item_non_opt;
+	const char *argv[] = { "hello", "--mister", "-c" };
+	struct argpar_state *state;
+	char *error = NULL;
+	enum argpar_state_parse_next_status status;
+
+	state = argpar_state_create(G_N_ELEMENTS(argv), argv, descrs);
+	assert(state);
+
+	/* Parse "hello" */
+	status = argpar_state_parse_next(state, &item, &error);
+	ok1(status == ARGPAR_STATE_PARSE_NEXT_STATUS_OK);
+	ok1(item);
+	ok1(item->type == ARGPAR_ITEM_TYPE_NON_OPT);
+	item_non_opt = (struct argpar_item_non_opt *) item;
+	ok1(item_non_opt->arg == argv[0]);
+	ok1(item_non_opt->non_opt_index == 0);
+	ok1(item_non_opt->orig_index == 0);
+	ok1(argpar_state_get_ingested_orig_args(state) == 1);
+	ok1(!error);
+
+	argpar_item_destroy(item);
+
+	/* Try to parse "--mister" */
+	status = argpar_state_parse_next(state, &item, &error);
+	ok1(status == ARGPAR_STATE_PARSE_NEXT_STATUS_ERROR_UNKNOWN_OPT);
+	ok1(error);
+	ok1(strcmp(error, "Unknown option `--mister`") == 0);
+	ok1(argpar_state_get_ingested_orig_args(state) == 1);
+
+	free(error);
+	argpar_state_destroy(state);
+}
+
 int main(void)
 {
-	plan_tests(129);
+	plan_tests(182);
+
+	/* Tests using the parse-everything-at-once API. */
 	succeed_tests();
 	fail_tests();
+
+	/* Tests using the iterator-based API. */
+	test_iter_succeed();
+	test_iter_fail();
+
 	return exit_status();
 }
